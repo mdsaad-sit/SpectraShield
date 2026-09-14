@@ -73,7 +73,3 @@ reports/
 .cache/
 .eslintcache
 .stylelintcache
-
-# Do NOT ignore
-.env.example
-README.md
