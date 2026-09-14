@@ -1,0 +1,211 @@
+.live-result {
+  padding: var(--space-6);
+  animation: fadeInUp 0.4s ease-out;
+}
+
+/* Collecting Phase */
+.live-result-collecting {
+  border-color: var(--color-accent-blue);
+  border-style: solid;
+  border-width: 1px;
+}
+
+.live-result-collecting-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.progress-ring-container {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.progress-ring {
+  transform: rotate(-90deg);
+}
+
+.progress-ring-bg {
+  stroke: var(--color-surface-glass);
+}
+
+.progress-ring-fill {
+  stroke: var(--color-accent-blue);
+  transition: stroke-dashoffset 0.5s ease;
+  filter: drop-shadow(0 0 6px var(--color-accent-blue-glow));
+}
+
+.progress-ring-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-ring-value {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.progress-ring-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.live-result-collecting-title {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-1);
+}
+
+.live-result-collecting-subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-3);
+}
+
+.live-result-collecting-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.live-result-collecting-sep {
+  color: var(--color-text-muted);
+}
+
+.live-result-current {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.live-result-current-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Final Result Phase */
+.live-result-real {
+  border-color: var(--color-real-border);
+  box-shadow: var(--shadow-glow-real);
+}
+
+.live-result-fake {
+  border-color: var(--color-fake-border);
+  box-shadow: var(--shadow-glow-fake);
+}
+
+.live-result-verdict {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.verdict-badge-real,
+.verdict-badge-fake {
+  flex-shrink: 0;
+}
+
+.live-result-label {
+  font-size: var(--font-size-3xl);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.live-result-sublabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.live-result-confidence {
+  margin-left: auto;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+}
+
+.live-result-confidence-value {
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+}
+
+.live-result-confidence-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Stats Row */
+.live-result-stats {
+  display: flex;
+  gap: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.live-result-stat {
+  flex: 1;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.live-result-stat-value {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.live-result-stat-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .live-result-collecting-inner {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .live-result-collecting-meta {
+    justify-content: center;
+  }
+
+  .live-result-verdict {
+    flex-wrap: wrap;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .live-result-confidence {
+    margin-left: 0;
+    text-align: center;
+    width: 100%;
+    margin-top: var(--space-2);
+  }
+
+  .live-result-stats {
+    flex-wrap: wrap;
+  }
+
+  .live-result-stat {
+    min-width: 60px;
+  }
+}

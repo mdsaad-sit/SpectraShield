@@ -1,0 +1,99 @@
+.chunk-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Dot Track */
+.chunk-timeline-track {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: var(--space-4);
+  background: var(--color-surface-glass);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.chunk-dot {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  transition: all var(--transition-fast);
+  animation: fadeInScale 0.3s ease-out both;
+  cursor: default;
+}
+
+.chunk-dot:hover {
+  transform: scale(1.2);
+}
+
+.chunk-dot-real {
+  background: var(--color-real-bg);
+  border: 1.5px solid var(--color-real-border);
+  color: var(--color-real);
+}
+
+.chunk-dot-fake {
+  background: var(--color-fake-bg);
+  border: 1.5px solid var(--color-fake-border);
+  color: var(--color-fake);
+}
+
+.chunk-dot-index {
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+/* Detail List */
+.chunk-detail-list {
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-right: var(--space-2);
+}
+
+.chunk-detail-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  animation: slideInRight 0.3s ease-out both;
+}
+
+.chunk-detail-real {
+  background: rgba(16, 185, 129, 0.04);
+  border-left: 3px solid var(--color-real);
+}
+
+.chunk-detail-fake {
+  background: rgba(239, 68, 68, 0.04);
+  border-left: 3px solid var(--color-fake);
+}
+
+.chunk-detail-index {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  min-width: 28px;
+}
+
+.chunk-detail-prob {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  margin-left: auto;
+}
+
+.chunk-detail-time {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  min-width: 32px;
+  text-align: right;
+}

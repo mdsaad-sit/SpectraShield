@@ -1,0 +1,33 @@
+{
+    "model_name": "SpectraShieldCNN",
+    "model_type": "CNN",
+    "input_shape": [
+        1,
+        128,
+        128
+    ],
+    "sample_rate": 16000,
+    "n_mels": 128,
+    "n_fft": 1024,
+    "hop_length": 256,
+    "spectrogram_type": "Log-Mel",
+    "target_frames": 128,
+    "training_segmentation": false,
+    "training_audio": "full_audio",
+    "inference_segmentation": true,
+    "inference_chunk_duration_seconds": 3,
+    "label_mapping": {
+        "0": "REAL",
+        "1": "FAKE"
+    },
+    "classification_threshold": 0.3,
+    "decision_rule": "FAKE if probability >= 0.30, otherwise REAL",
+    "best_epoch": 14,
+    "validation_f1_at_best_epoch": 0.9975465697410268,
+    "validation_threshold_best_f1": 0.59,
+    "validation_best_f1": 0.9978181818181818,
+    "validation_f1_at_0.30": 0.9970046292094037,
+    "validation_accuracy_at_0.30": 0.9967,
+    "validation_precision_at_0.30": 0.9954685517491391,
+    "validation_recall_at_0.30": 0.9985454545454545
+}

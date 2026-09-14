@@ -1,0 +1,52 @@
+.health-badge {
+  padding: var(--space-4) var(--space-5);
+  animation: fadeInUp 0.5s ease-out 0.2s both;
+}
+
+.health-badge-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.health-badge-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.health-badge-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.health-badge-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.health-badge-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+}
+
+.health-badge-error {
+  margin-top: var(--space-2);
+  font-size: var(--font-size-xs);
+  color: var(--color-error);
+}
+
+.health-connected {
+  border-color: rgba(16, 185, 129, 0.15);
+}
+
+.health-disconnected {
+  border-color: rgba(239, 68, 68, 0.15);
+}
