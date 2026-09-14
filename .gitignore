@@ -22,8 +22,6 @@ env/
 # Environment files
 .env
 # ML model files
-*.pth
-*.pt
 *.onnx
 *.ckpt
 # Training/data artifacts
