@@ -2,7 +2,7 @@
 Grad-CAM explanation utility for SpectraShield.
 
 Generates a Grad-CAM heatmap from the final convolutional
-layer (conv4) of SpectraShieldCNN.
+layer (features[12]) of SpectraShieldCNN.
 
 The explanation targets the FAKE logit.
 """
@@ -26,8 +26,8 @@ class GradCAM:
         self.activations = None
         self.gradients = None
 
-        # Final convolutional layer
-        self.target_layer = self.model.conv4
+        # Final convolutional layer: Conv2d(128, 256) at features[12]
+        self.target_layer = self.model.features[12]
 
         # Register hooks
         self.forward_handle = (

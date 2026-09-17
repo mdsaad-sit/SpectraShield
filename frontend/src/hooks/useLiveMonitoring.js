@@ -41,6 +41,23 @@ function encodeWAV(samples, sampleRate) {
 }
 
 /**
+ * Concatenate an array of Float32Arrays into one contiguous Float32Array.
+ */
+function concatFloat32Arrays(arrays) {
+  let totalLength = 0;
+  for (let i = 0; i < arrays.length; i++) {
+    totalLength += arrays[i].length;
+  }
+  const result = new Float32Array(totalLength);
+  let offset = 0;
+  for (let i = 0; i < arrays.length; i++) {
+    result.set(arrays[i], offset);
+    offset += arrays[i].length;
+  }
+  return result;
+}
+
+/**
  * useLiveMonitoring — Full live microphone monitoring lifecycle.
  *
  * Manages: getUserMedia → capture 4s chunks → POST each chunk → accumulate results
@@ -49,6 +66,15 @@ function encodeWAV(samples, sampleRate) {
  * IMPORTANT: Uses the ACTUAL AudioContext sample rate (not a hardcoded value)
  * to correctly size chunks and communicate with the backend. The backend will
  * resample to 16 kHz internally if needed.
+ *
+ * FIX: The ScriptProcessorNode is connected through a zero-gain GainNode
+ * instead of directly to audioContext.destination. This prevents the
+ * microphone signal from being played back through the speakers (which
+ * would create acoustic feedback contaminating the captured signal).
+ *
+ * FIX: Chunk prediction requests are queued and processed sequentially.
+ * Chunk N+1 is not sent until chunk N's response has been received.
+ * This ensures deterministic ordering for cumulative voting.
  */
 export function useLiveMonitoring() {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -63,7 +89,9 @@ export function useLiveMonitoring() {
   const streamRef = useRef(null);
   const contextRef = useRef(null);
   const processorRef = useRef(null);
-  const bufferRef = useRef([]);
+  // Buffer accumulator: array of Float32Array fragments
+  const bufferFragmentsRef = useRef([]);
+  const bufferLengthRef = useRef(0);
   const recordedSamplesRef = useRef([]);
   const chunkIndexRef = useRef(0);
   const sessionIdRef = useRef(null);
@@ -71,31 +99,63 @@ export function useLiveMonitoring() {
   const timerRef = useRef(null);
   const actualSampleRateRef = useRef(16000);
   const chunkSamplesRef = useRef(16000 * CHUNK_DURATION);
+  // Sequential chunk processing queue
+  const chunkQueueRef = useRef([]);
+  const isProcessingChunkRef = useRef(false);
+  const gainNodeRef = useRef(null);
 
   const generateSessionId = () => {
     return `live-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   };
 
-  const processChunk = useCallback(async (audioData, chunkIndex, sid, sampleRate) => {
-    try {
-      const data = await predictChunk(sid, audioData, sampleRate, chunkIndex);
-      setChunkResults((prev) => [...prev, data]);
-      setLatestResult(data);
-      return data;
-    } catch (err) {
-      console.error('Chunk prediction failed:', err);
-      return null;
+  /**
+   * Drain the chunk queue one item at a time.
+   * Each chunk must complete (success or failure) before the next is sent.
+   */
+  const drainChunkQueue = useCallback(async () => {
+    if (isProcessingChunkRef.current) return;
+    if (chunkQueueRef.current.length === 0) return;
+
+    isProcessingChunkRef.current = true;
+
+    while (chunkQueueRef.current.length > 0) {
+      const { audioData, chunkIndex, sid, sampleRate } = chunkQueueRef.current.shift();
+
+      try {
+        const data = await predictChunk(sid, audioData, sampleRate, chunkIndex);
+        setChunkResults((prev) => [...prev, data]);
+        setLatestResult(data);
+      } catch (err) {
+        console.error(`Chunk ${chunkIndex} prediction failed:`, err);
+        setError(`Chunk ${chunkIndex + 1} prediction failed: ${err.message || 'Unknown error'}`);
+        // Do NOT add a fake result to chunkResults.
+        // Do NOT silently swallow the error.
+      }
     }
+
+    isProcessingChunkRef.current = false;
   }, []);
+
+  /**
+   * Enqueue a chunk for sequential processing.
+   * Audio capture is never blocked — only the API requests are serialized.
+   */
+  const enqueueChunk = useCallback((audioData, chunkIndex, sid, sampleRate) => {
+    chunkQueueRef.current.push({ audioData, chunkIndex, sid, sampleRate });
+    drainChunkQueue();
+  }, [drainChunkQueue]);
 
   const start = useCallback(async () => {
     setError(null);
     setChunkResults([]);
     setLatestResult(null);
     setElapsedTime(0);
-    bufferRef.current = [];
+    bufferFragmentsRef.current = [];
+    bufferLengthRef.current = 0;
     recordedSamplesRef.current = [];
     chunkIndexRef.current = 0;
+    chunkQueueRef.current = [];
+    isProcessingChunkRef.current = false;
 
     // Revoke previous recording URL to free memory
     if (recordingUrl) {
@@ -148,6 +208,7 @@ export function useLiveMonitoring() {
         if (!isMonitoringRef.current) return;
 
         const inputData = e.inputBuffer.getChannelData(0);
+        // Copy the input buffer — it is reused by the browser between calls
         const samples = new Float32Array(inputData);
 
         // Calculate audio level for visualizer
@@ -160,25 +221,57 @@ export function useLiveMonitoring() {
         // Save all samples for recording playback
         recordedSamplesRef.current.push(new Float32Array(samples));
 
-        // Accumulate samples for chunk processing
-        bufferRef.current.push(...samples);
+        // Accumulate samples using typed array fragments (no spread into plain Array)
+        bufferFragmentsRef.current.push(samples);
+        bufferLengthRef.current += samples.length;
 
         // When we have CHUNK_DURATION seconds of audio, process the chunk
-        if (bufferRef.current.length >= chunkSamplesRef.current) {
+        if (bufferLengthRef.current >= chunkSamplesRef.current) {
           const targetLen = chunkSamplesRef.current;
-          const chunkData = new Float32Array(bufferRef.current.slice(0, targetLen));
-          bufferRef.current = bufferRef.current.slice(targetLen);
+
+          // Concatenate all fragments into one contiguous Float32Array
+          const fullBuffer = concatFloat32Arrays(bufferFragmentsRef.current);
+
+          // Extract exactly targetLen samples for this chunk
+          const chunkData = fullBuffer.slice(0, targetLen);
+
+          // Keep any leftover samples for the next chunk
+          if (fullBuffer.length > targetLen) {
+            bufferFragmentsRef.current = [fullBuffer.slice(targetLen)];
+            bufferLengthRef.current = fullBuffer.length - targetLen;
+          } else {
+            bufferFragmentsRef.current = [];
+            bufferLengthRef.current = 0;
+          }
 
           const currentIndex = chunkIndexRef.current;
           chunkIndexRef.current += 1;
 
-          // Send actual sample rate so backend can resample to 16 kHz
-          processChunk(chunkData, currentIndex, sessionIdRef.current, actualSampleRateRef.current);
+          // Enqueue for sequential processing — never overlaps with previous chunk
+          enqueueChunk(chunkData, currentIndex, sessionIdRef.current, actualSampleRateRef.current);
         }
       };
 
       source.connect(processor);
-      processor.connect(audioContext.destination);
+
+      // FIX: Connect processor through a ZERO-GAIN GainNode to prevent
+      // microphone audio from playing back through speakers.
+      //
+      // ScriptProcessorNode requires being connected to the audio graph
+      // destination to keep firing onaudioprocess events. A zero-gain
+      // GainNode acts as a silent sink — the processor stays active
+      // but no sound reaches the speakers.
+      //
+      // WITHOUT this fix, the microphone signal is routed to speakers,
+      // creating acoustic feedback that contaminates the captured audio
+      // with reverb/comb-filtering artifacts. The CNN model interprets
+      // these artifacts as synthetic speech characteristics, causing
+      // every chunk to be classified as FAKE.
+      const silentGain = audioContext.createGain();
+      silentGain.gain.value = 0;
+      silentGain.connect(audioContext.destination);
+      processor.connect(silentGain);
+      gainNodeRef.current = silentGain;
 
       setIsMonitoring(true);
       isMonitoringRef.current = true;
@@ -196,7 +289,7 @@ export function useLiveMonitoring() {
         setError(err.message || 'Failed to start live monitoring');
       }
     }
-  }, [processChunk, recordingUrl]);
+  }, [enqueueChunk, recordingUrl]);
 
   const stop = useCallback(async () => {
     isMonitoringRef.current = false;
@@ -213,6 +306,11 @@ export function useLiveMonitoring() {
       processorRef.current = null;
     }
 
+    if (gainNodeRef.current) {
+      gainNodeRef.current.disconnect();
+      gainNodeRef.current = null;
+    }
+
     if (contextRef.current) {
       contextRef.current.close();
       contextRef.current = null;
@@ -226,14 +324,7 @@ export function useLiveMonitoring() {
     // Build WAV from recorded samples
     const chunks = recordedSamplesRef.current;
     if (chunks.length > 0) {
-      const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
-      const merged = new Float32Array(totalLength);
-      let offset = 0;
-      for (const chunk of chunks) {
-        merged.set(chunk, offset);
-        offset += chunk.length;
-      }
-
+      const merged = concatFloat32Arrays(chunks);
       const wavBlob = encodeWAV(merged, actualSampleRateRef.current);
       const url = URL.createObjectURL(wavBlob);
       setRecordingUrl(url);
@@ -247,7 +338,10 @@ export function useLiveMonitoring() {
       }
     }
 
-    bufferRef.current = [];
+    bufferFragmentsRef.current = [];
+    bufferLengthRef.current = 0;
+    chunkQueueRef.current = [];
+    isProcessingChunkRef.current = false;
   }, []);
 
   const reset = useCallback(() => {

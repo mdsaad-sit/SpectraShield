@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from app.inference.model_loader import ModelLoader
 from app.inference.chunking import chunk_audio
 from app.inference.gradcam import GradCAM
+from app.inference.preprocessing import preprocess_chunk_waveform
 import logging
 import tempfile
 import os
@@ -316,117 +317,15 @@ def preprocess_audio_chunk(chunk_y, sr):
     Convert one audio chunk into the exact Log-Mel
     representation expected by SpectraShieldCNN.
 
+    Delegates to the shared canonical preprocessing function
+    in app.inference.preprocessing to ensure recorded and live
+    paths are always identical.
+
     Output:
         torch.Tensor with shape:
         [1, 1, 128, 128]
     """
-
-    chunk_y = np.asarray(
-        chunk_y,
-        dtype=np.float32
-    )
-
-    if len(chunk_y) == 0:
-        raise ValueError(
-            "Audio chunk is empty"
-        )
-
-    # ---------------------------------------------------------
-    # Normalize waveform
-    # ---------------------------------------------------------
-    max_amp = np.max(
-        np.abs(chunk_y)
-    )
-
-    if max_amp > 0:
-        chunk_y = chunk_y / max_amp
-
-    # ---------------------------------------------------------
-    # Generate Mel spectrogram
-    # ---------------------------------------------------------
-    mel = librosa.feature.melspectrogram(
-        y=chunk_y,
-        sr=sr,
-        n_fft=N_FFT,
-        hop_length=HOP_LENGTH,
-        n_mels=N_MELS,
-        power=2.0
-    )
-
-    # ---------------------------------------------------------
-    # Convert to logarithmic scale
-    # ---------------------------------------------------------
-    logmel = librosa.power_to_db(
-        mel,
-        ref=np.max
-    )
-
-    # ---------------------------------------------------------
-    # Min-Max normalization
-    # ---------------------------------------------------------
-    logmel_min = logmel.min()
-    logmel_max = logmel.max()
-
-    logmel = (
-        logmel - logmel_min
-    ) / (
-        logmel_max - logmel_min + 1e-8
-    )
-
-    # ---------------------------------------------------------
-    # Resize complete spectrogram to 128 frames
-    #
-    # IMPORTANT:
-    # This matches the preprocessing used during training.
-    # ---------------------------------------------------------
-    current_frames = logmel.shape[1]
-
-    if current_frames != TARGET_FRAMES:
-
-        old_x = np.linspace(
-            0,
-            1,
-            current_frames
-        )
-
-        new_x = np.linspace(
-            0,
-            1,
-            TARGET_FRAMES
-        )
-
-        resized = np.empty(
-            (N_MELS, TARGET_FRAMES),
-            dtype=np.float32
-        )
-
-        for m in range(N_MELS):
-            resized[m] = np.interp(
-                new_x,
-                old_x,
-                logmel[m]
-            )
-
-        logmel = resized
-
-    # ---------------------------------------------------------
-    # Convert to tensor
-    #
-    # [128, 128]
-    #       ↓
-    # [1, 128, 128]
-    #       ↓
-    # [1, 1, 128, 128]
-    # ---------------------------------------------------------
-    logmel = logmel.astype(
-        np.float32
-    )
-
-    tensor = torch.from_numpy(
-        logmel
-    ).unsqueeze(0).unsqueeze(0)
-
-    return tensor
+    return preprocess_chunk_waveform(chunk_y, sr)
 
 
 def _encode_figure(figure):

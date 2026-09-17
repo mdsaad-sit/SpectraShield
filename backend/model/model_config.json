@@ -1,33 +1,108 @@
 {
-    "model_name": "SpectraShieldCNN",
-    "model_type": "CNN",
-    "input_shape": [
-        1,
-        128,
-        128
-    ],
-    "sample_rate": 16000,
-    "n_mels": 128,
-    "n_fft": 1024,
-    "hop_length": 256,
-    "spectrogram_type": "Log-Mel",
-    "target_frames": 128,
-    "training_segmentation": false,
-    "training_audio": "full_audio",
-    "inference_segmentation": true,
-    "inference_chunk_duration_seconds": 3,
-    "label_mapping": {
-        "0": "REAL",
-        "1": "FAKE"
+    "project": {
+        "name": "SpectraShield",
+        "task": "AI-generated / deepfake speech detection",
+        "labels": {
+            "0": "REAL",
+            "1": "FAKE"
+        }
     },
-    "classification_threshold": 0.3,
-    "decision_rule": "FAKE if probability >= 0.30, otherwise REAL",
-    "best_epoch": 14,
-    "validation_f1_at_best_epoch": 0.9975465697410268,
-    "validation_threshold_best_f1": 0.59,
-    "validation_best_f1": 0.9978181818181818,
-    "validation_f1_at_0.30": 0.9970046292094037,
-    "validation_accuracy_at_0.30": 0.9967,
-    "validation_precision_at_0.30": 0.9954685517491391,
-    "validation_recall_at_0.30": 0.9985454545454545
+    "model": {
+        "name": "SpectraShieldCNN",
+        "framework": "PyTorch",
+        "input_shape": [1, 128, 128],
+        "parameters": 389057,
+        "architecture": {
+            "features": [
+                "Conv2d(1,32,3,padding=1)",
+                "BatchNorm2d(32)",
+                "ReLU",
+                "MaxPool2d(2)",
+                "Conv2d(32,64,3,padding=1)",
+                "BatchNorm2d(64)",
+                "ReLU",
+                "MaxPool2d(2)",
+                "Conv2d(64,128,3,padding=1)",
+                "BatchNorm2d(128)",
+                "ReLU",
+                "MaxPool2d(2)",
+                "Conv2d(128,256,3,padding=1)",
+                "BatchNorm2d(256)",
+                "ReLU",
+                "AdaptiveAvgPool2d((1,1))"
+            ],
+            "classifier": [
+                "Dropout(0.4)",
+                "Identity()",
+                "Linear(256,1)"
+            ]
+        },
+        "checkpoints": {
+            "patience_5": "best_model.pth",
+            "patience_8": "best_model_patience8.pth"
+        }
+    },
+    "preprocessing": {
+        "sample_rate": 16000,
+        "mono": true,
+        "n_mels": 128,
+        "n_fft": 1024,
+        "hop_length": 256,
+        "power": 2.0,
+        "target_frames": 128,
+        "target_shape": [128, 128],
+        "spectrogram": "Log-Mel",
+        "db_reference": "np.max",
+        "waveform_normalization": "divide by maximum absolute amplitude",
+        "logmel_normalization": "min-max normalization",
+        "storage_dtype": "float16",
+        "model_input_dtype": "float32"
+    },
+    "inference": {
+        "activation": "sigmoid",
+        "fake_probability": "sigmoid(logit)",
+        "threshold": 0.3,
+        "decision": "FAKE if probability >= 0.30, otherwise REAL"
+    },
+    "training": {
+        "batch_size": 64,
+        "max_epochs": 20,
+        "optimizer": "AdamW",
+        "learning_rate": 0.001,
+        "loss": "BCEWithLogitsLoss",
+        "sampler": "WeightedRandomSampler",
+        "scheduler": {
+            "name": "ReduceLROnPlateau",
+            "factor": 0.5,
+            "patience": 2
+        },
+        "mixed_precision": true,
+        "runs": {
+            "patience_5": {
+                "early_stopping_patience": 5
+            },
+            "patience_8": {
+                "early_stopping_patience": 8
+            }
+        }
+    },
+    "deployment": {
+        "recorded_audio": {
+            "chunk_seconds": 5,
+            "decision": "majority vote across all chunks"
+        },
+        "live_monitoring": {
+            "chunk_seconds": 4,
+            "first_result_after_seconds": 20,
+            "first_vote_chunks": 5,
+            "decision": "use all accumulated chunks since session start",
+            "new_session": "clear accumulated predictions"
+        },
+        "chunking": "inference/deployment only; training uses full audio-derived samples"
+    },
+    "environment": {
+        "pytorch": "2.10.0+cu128",
+        "cuda": "12.8",
+        "gpu": "NVIDIA Tesla T4"
+    }
 }

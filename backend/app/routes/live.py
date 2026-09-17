@@ -1,10 +1,17 @@
 from flask import Blueprint, request, jsonify
 from app.inference.model_loader import ModelLoader
+from app.inference.preprocessing import (
+    preprocess_chunk_waveform,
+    validate_waveform,
+    SR,
+    N_MELS,
+    N_FFT,
+    HOP_LENGTH,
+    TARGET_FRAMES,
+)
 import logging
 
 import numpy as np
-import torch
-import librosa
 
 logger = logging.getLogger(__name__)
 
@@ -13,13 +20,6 @@ live_bp = Blueprint("live", __name__)
 # ============================================================
 # SpectraShield configuration
 # ============================================================
-
-SR = 16000
-
-N_MELS = 128
-N_FFT = 1024
-HOP_LENGTH = 256
-TARGET_FRAMES = 128
 
 # 0 = REAL
 # 1 = FAKE
@@ -255,13 +255,38 @@ def predict_live_chunk():
             "error": "chunk_index must be >= 0"
         }), 400
 
+    # --------------------------------------------------------
+    # Waveform validation
+    # --------------------------------------------------------
+
+    try:
+        validate_waveform(audio_data)
+    except ValueError as e:
+        logger.warning(
+            "Live chunk %d (session %s) waveform validation "
+            "failed: %s",
+            chunk_index, session_id, str(e)
+        )
+        return jsonify({
+            "error": f"Invalid audio: {str(e)}"
+        }), 400
+
+    # --------------------------------------------------------
+    # Diagnostic logging
+    # --------------------------------------------------------
+
+    _log_chunk_diagnostics(
+        session_id, chunk_index, audio_data, sample_rate,
+        stage="received"
+    )
+
     try:
 
         # ----------------------------------------------------
-        # Preprocess
+        # Preprocess using the shared canonical function
         # ----------------------------------------------------
 
-        tensor = preprocess_audio_chunk(
+        tensor = preprocess_chunk_waveform(
             audio_data,
             sample_rate
         )
@@ -270,11 +295,12 @@ def predict_live_chunk():
         # Model prediction
         # ----------------------------------------------------
 
-        _, fake_prob = ModelLoader.predict(
+        logit, fake_prob = ModelLoader.predict(
             tensor
         )
 
         fake_prob = float(fake_prob)
+        logit_val = float(logit.item()) if hasattr(logit, 'item') else float(logit)
 
         # ----------------------------------------------------
         # Classification
@@ -287,6 +313,14 @@ def predict_live_chunk():
         confidence = calculate_confidence(
             prediction,
             fake_prob
+        )
+
+        # Diagnostic logging for prediction
+        logger.info(
+            "[LIVE DIAG] session=%s chunk=%d | "
+            "logit=%.4f sigmoid=%.4f prediction=%s",
+            session_id, chunk_index,
+            logit_val, fake_prob, prediction
         )
 
         # ----------------------------------------------------
@@ -473,144 +507,41 @@ def live_stop():
 
 
 # ============================================================
-# Preprocessing
+# Diagnostic logging
 # ============================================================
 
-def preprocess_audio_chunk(
-    chunk_y,
-    sr
+def _log_chunk_diagnostics(
+    session_id, chunk_index, audio_data, sample_rate,
+    stage="received"
 ):
-    """
-    Convert one live audio chunk into the exact
-    Log-Mel representation expected by SpectraShieldCNN.
+    """Log detailed signal statistics for a live audio chunk.
 
-    Output shape:
-
-        [1, 1, 128, 128]
+    This aids debugging by showing exact waveform characteristics
+    at each stage of the pipeline.
     """
 
-    chunk_y = np.asarray(
-        chunk_y,
-        dtype=np.float32
+    duration = len(audio_data) / sample_rate if sample_rate > 0 else 0
+    finite_count = int(np.sum(np.isfinite(audio_data)))
+    min_val = float(np.min(audio_data))
+    max_val = float(np.max(audio_data))
+    mean_val = float(np.mean(audio_data))
+    std_val = float(np.std(audio_data))
+    rms = float(np.sqrt(np.mean(audio_data ** 2)))
+    peak = float(np.max(np.abs(audio_data)))
+    zero_count = int(np.sum(audio_data == 0))
+
+    logger.info(
+        "[LIVE DIAG] session=%s chunk=%d stage=%s | "
+        "samples=%d sr=%d duration=%.3fs | "
+        "finite=%d zeros=%d | "
+        "min=%.6f max=%.6f mean=%.6f std=%.6f | "
+        "rms=%.6f peak=%.6f",
+        session_id, chunk_index, stage,
+        len(audio_data), sample_rate, duration,
+        finite_count, zero_count,
+        min_val, max_val, mean_val, std_val,
+        rms, peak
     )
-
-    if len(chunk_y) == 0:
-        raise ValueError(
-            "Audio chunk is empty"
-        )
-
-    # --------------------------------------------------------
-    # Resample to training sample rate
-    # --------------------------------------------------------
-
-    if sr != SR:
-
-        chunk_y = librosa.resample(
-            chunk_y,
-            orig_sr=sr,
-            target_sr=SR
-        )
-
-        sr = SR
-
-    # --------------------------------------------------------
-    # Normalize waveform
-    # --------------------------------------------------------
-
-    max_amp = np.max(
-        np.abs(chunk_y)
-    )
-
-    if max_amp > 0:
-        chunk_y = (
-            chunk_y / max_amp
-        )
-
-    # --------------------------------------------------------
-    # Mel spectrogram
-    # --------------------------------------------------------
-
-    mel = librosa.feature.melspectrogram(
-        y=chunk_y,
-        sr=sr,
-        n_fft=N_FFT,
-        hop_length=HOP_LENGTH,
-        n_mels=N_MELS,
-        power=2.0
-    )
-
-    # --------------------------------------------------------
-    # Log scale
-    # --------------------------------------------------------
-
-    logmel = librosa.power_to_db(
-        mel,
-        ref=np.max
-    )
-
-    # --------------------------------------------------------
-    # Min-max normalization
-    # --------------------------------------------------------
-
-    logmel = (
-        logmel - logmel.min()
-    ) / (
-        logmel.max()
-        - logmel.min()
-        + 1e-8
-    )
-
-    # --------------------------------------------------------
-    # Resize complete spectrogram to 128 frames
-    # --------------------------------------------------------
-
-    current_frames = logmel.shape[1]
-
-    if current_frames != TARGET_FRAMES:
-
-        old_x = np.linspace(
-            0,
-            1,
-            current_frames
-        )
-
-        new_x = np.linspace(
-            0,
-            1,
-            TARGET_FRAMES
-        )
-
-        resized = np.empty(
-            (
-                N_MELS,
-                TARGET_FRAMES
-            ),
-            dtype=np.float32
-        )
-
-        for m in range(N_MELS):
-
-            resized[m] = np.interp(
-                new_x,
-                old_x,
-                logmel[m]
-            )
-
-        logmel = resized
-
-    # --------------------------------------------------------
-    # Tensor
-    # --------------------------------------------------------
-
-    logmel = logmel.astype(
-        np.float32
-    )
-
-    tensor = torch.from_numpy(
-        logmel
-    ).unsqueeze(0).unsqueeze(0)
-
-    return tensor
 
 
 # ============================================================
